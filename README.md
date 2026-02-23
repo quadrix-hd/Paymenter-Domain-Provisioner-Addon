@@ -5,14 +5,19 @@
 ```bash
 
 # Ordner kopieren
-cp -r DomainProvisioner /var/www/paymenter/extensions/Others/
+cp -r Paymenter-Domain-Provisioner-Addon /var/www/paymenter/extensions/Others/
+mv Paymenter-Domain-Provisioner-Addon Domain-Provisioner
+
+# Extension erstellen
+cd /var/www/paymenter
+php artisan app:extension:create
 
 # Cache leeren
 cd /var/www/paymenter
 php artisan optimize:clear
 ```
 
-Dann im Admin-Panel: **Extensions → Others → Domain Provisioner → Deinstallieren → Installieren → Aktivieren**
+Dann im Admin-Panel: **Extensions → Others → Domain Provisioner → Installieren → Aktivieren**
 
 ## Wo sind die Einstellungen?
 
