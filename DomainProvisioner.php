@@ -40,7 +40,7 @@ class DomainProvisioner extends Extension
         ExtensionHelper::rollbackMigrations('extensions/Others/DomainProvisioner/database/migrations');
     }
 
-    public function upgraded(): void
+    public function upgraded($oldVersion = null): void
     {
         ExtensionHelper::runMigrations('extensions/Others/DomainProvisioner/database/migrations');
     }
