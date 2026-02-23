@@ -1,147 +1,126 @@
-# Domain Provisioner für Paymenter + Cloudflare + Pangolin
+# Domain Provisioner – Paymenter Extension
 
-Automatische DNS- und Tunnel-Provisionierung wenn ein Kunde in Paymenter eine Wunsch-Subdomain bucht.
+Automatische DNS- und Tunnel-Provisionierung direkt in Paymenter.  
+Wenn ein Kunde eine VM mit Wunsch-Subdomain kauft, wird **automatisch** ein Cloudflare A-Record und ein Pangolin Tunnel-Eintrag erstellt.
+
+---
 
 ## Was passiert automatisch?
 
 ```
-Kunde bucht VM mit Wunsch-Subdomain "meinserver"
+Kunde kauft VM, gibt "meinserver" als Wunsch-Subdomain ein
         ↓
-Paymenter sendet Webhook → dieser Server
+Paymenter aktiviert die Bestellung
         ↓
-① Cloudflare A-Record erstellen: meinserver.deinedomain.de → Server-IP
-② Pangolin Tunnel-Eintrag erstellen: meinserver.deinedomain.de → Server-IP:Port
+① Cloudflare A-Record erstellt: meinserver.deinedomain.de → Server-IP
+② Pangolin Tunnel-Eintrag erstellt: meinserver.deinedomain.de → Server-IP:Port
         ↓
 Kunde kann sofort seine Domain nutzen ✅
-```
 
-Bei Kündigung werden beide Einträge automatisch wieder gelöscht.
+Bei Kündigung → alles wird automatisch wieder gelöscht.
+```
 
 ---
 
-## Setup
+## Installation
 
-### 1. Dateien vorbereiten
+### 1. Dateien kopieren
+
+Kopiere den Ordner `DomainProvisioner` in dein Paymenter-Verzeichnis:
 
 ```bash
-git clone <repo> domain-provisioner
-cd domain-provisioner
-cp .env.example .env
-nano .env   # Alle Werte ausfüllen!
+cp -r DomainProvisioner /var/www/paymenter/extensions/Others/
 ```
 
-### 2. Konfiguration (.env)
+### 2. Extension aktivieren
 
-| Variable | Beschreibung |
+Im Paymenter Admin-Panel:
+**Admin → Extensions → Others → Domain Provisioner → Installieren → Aktivieren**
+
+### 3. Extension konfigurieren
+
+Nach dem Aktivieren erscheinen die Konfigurationsfelder direkt im Admin-Panel.  
+Trage dort ein:
+
+| Feld | Wo finden |
 |---|---|
-| `WEBHOOK_SECRET` | Secret aus Paymenter Webhook-Einstellungen |
-| `BASE_DOMAIN` | Deine Domain (z.B. `meinedomain.de`) |
-| `CF_API_TOKEN` | Cloudflare API Token (DNS:Edit) |
-| `CF_ZONE_ID` | Zone-ID aus Cloudflare Dashboard |
-| `CF_PROXIED` | `true` = orange Wolke, `false` = nur DNS |
-| `PANGOLIN_URL` | URL deiner Pangolin-Instanz |
-| `PANGOLIN_API_KEY` | Pangolin API Key |
-| `PANGOLIN_ORG_ID` | Pangolin Organisation-ID |
-| `PANGOLIN_SITE_ID` | Pangolin Site-ID |
+| **Basis-Domain** | Deine Domain, z.B. `meinedomain.de` |
+| **Cloudflare API Token** | Cloudflare Dashboard → Mein Profil → API-Token (Berechtigung: Zone > DNS > Edit) |
+| **Cloudflare Zone-ID** | Cloudflare Dashboard → deine Domain → rechts unten |
+| **Cloudflare Proxy** | Nein empfohlen bei Pangolin-Tunnel |
+| **Pangolin URL** | URL deiner Pangolin-Instanz |
+| **Pangolin API Key** | Pangolin Dashboard → Settings → API Keys |
+| **Pangolin Org-ID** | Aus der Pangolin-URL: `/org/1/...` → `1` |
+| **Pangolin Site-ID** | Aus der Pangolin-URL: `/sites/1/...` → `1` |
 
-### 3. Starten
+### 4. Custom-Feld in Paymenter anlegen
 
-**Mit Docker (empfohlen):**
-```bash
-docker-compose up -d
-docker-compose logs -f
-```
+Damit der Kunde seine Wunsch-Subdomain eingeben kann, muss beim VM-Produkt ein Custom-Feld angelegt werden:
 
-**Ohne Docker:**
-```bash
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
+**Admin → Produkte → dein VM-Produkt → Custom Fields → Neu**
 
-### 4. Paymenter Webhook einrichten
-
-In Paymenter unter **Einstellungen → Webhooks → Neu**:
-
-- **URL:** `https://deinserver.de:8000/webhook/paymenter`
-- **Events:** `order.created`, `order.activated`, `order.cancelled`, `order.deleted`
-- **Secret:** gleicher Wert wie `WEBHOOK_SECRET` in der .env
-
-### 5. Paymenter Bestellformular – Custom-Feld hinzufügen
-
-In Paymenter musst du beim Produkt (VM) ein Custom-Feld anlegen, damit der Kunde seine Wunsch-Subdomain eingeben kann:
-
-- **Feldname:** `subdomain` (oder `domain` oder `wunschdomain`)
+- **Feldname (intern):** `subdomain`  ← muss mit dem Wert in der Extension-Konfig übereinstimmen!
+- **Label:** `Wunsch-Subdomain`
 - **Typ:** Text
 - **Pflichtfeld:** Ja
-- **Beschreibung:** z.B. "Deine Wunsch-Subdomain (nur Kleinbuchstaben, keine Punkte)"
+- **Beschreibung:** z.B. `Nur Kleinbuchstaben und Bindestrich erlaubt (z.B. "meinserver")`
 
-Der Wert wird dann im Webhook-Payload unter `order.options.subdomain` übertragen.
-
----
-
-## API Endpoints
-
-| Endpoint | Methode | Beschreibung |
-|---|---|---|
-| `/webhook/paymenter` | POST | Paymenter Webhook empfangen |
-| `/health` | GET | Status + Anzahl aktiver Provisions |
-| `/provisions` | GET | Alle aktiven Domains anzeigen |
-
----
-
-## Nginx Reverse Proxy (optional)
-
-Wenn du den Server hinter Nginx betreiben willst:
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name provisioner.meinedomain.de;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
----
-
-## Troubleshooting
-
-**Webhook kommt nicht an?**
-```bash
-# Logs prüfen
-docker-compose logs -f provisioner
-
-# Manuell testen
-curl -X POST http://localhost:8000/webhook/paymenter \
-  -H "Content-Type: application/json" \
-  -d '{"event":"order.activated","order":{"id":"test123","options":{"subdomain":"testvm","server_ip":"1.2.3.4"}}}'
-```
-
-**Cloudflare Fehler?**
-- API Token muss `Zone > DNS > Edit` Berechtigung haben
-- Zone-ID muss zur BASE_DOMAIN passen
-
-**Pangolin Fehler?**
-- API Key in Pangolin unter Settings > API Keys erstellen
-- Org-ID und Site-ID aus der Pangolin URL ablesen (z.B. `/org/1/sites/1`)
+Für die Server-IP: Wenn Pterodactyl die IP automatisch setzt, prüfe wie Paymenter sie im Order-Objekt speichert. Alternativ auch ein Custom-Feld `server_ip` anlegen (oder den Extension-Feldnamen entsprechend anpassen).
 
 ---
 
 ## Datei-Übersicht
 
 ```
-domain-provisioner/
-├── main.py          # FastAPI Server + Webhook Handler
-├── config.py        # Konfiguration (liest .env)
-├── cloudflare_dns.py # Cloudflare DNS API
-├── pangolin.py      # Pangolin Tunnel API
-├── db.py            # SQLite Datenbank
-├── .env.example     # Vorlage für Konfiguration
-├── requirements.txt
-├── Dockerfile
-└── docker-compose.yml
+DomainProvisioner/
+├── DomainProvisioner.php              # Haupt-Extension-Klasse (Boot + Konfiguration)
+├── Listeners.php                      # Event-Listener für Order-Events
+├── Services/
+│   ├── CloudflareService.php          # Cloudflare DNS API
+│   └── PangolinService.php            # Pangolin Tunnel API
+├── Models/
+│   └── DomainProvision.php            # Eloquent Model für DB-Einträge
+├── database/
+│   └── migrations/
+│       └── ..._create_domain_provisions_table.php
+└── README.md
 ```
+
+---
+
+## Troubleshooting
+
+**Logs prüfen:**
+```bash
+tail -f /var/www/paymenter/storage/logs/laravel.log | grep DomainProvisioner
+```
+
+**Migration manuell ausführen** (falls nötig):
+```bash
+cd /var/www/paymenter
+php artisan migrate
+```
+
+**Cloudflare API Token testen:**
+```bash
+curl -X GET "https://api.cloudflare.com/client/v4/zones/ZONE_ID/dns_records" \
+  -H "Authorization: Bearer DEIN_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+**Pangolin API testen:**
+```bash
+curl -X GET "https://pangolin.deinedomain.de/api/v1/org/1/resources" \
+  -H "Authorization: Bearer DEIN_API_KEY"
+```
+
+---
+
+## Hinweis zu Paymenter Events
+
+Die Extension lauscht auf folgende Paymenter-Events:
+- `App\Events\Order\OrderActivated` → Provisionieren
+- `App\Events\Order\OrderCancelled` → Deprovisionieren
+- `App\Events\Order\OrderDeleted` → Deprovisionieren
+
+Falls deine Paymenter-Version andere Event-Namen verwendet, prüfe die Event-Klassen in `/var/www/paymenter/app/Events/` und passe `Listeners.php` entsprechend an.
