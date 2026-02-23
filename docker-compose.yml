@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  provisioner:
+    build: .
+    container_name: domain-provisioner
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./provisioner.db:/app/provisioner.db
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
