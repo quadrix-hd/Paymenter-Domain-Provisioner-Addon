@@ -3,10 +3,8 @@
 ## Installation
 
 ```bash
-# Alten Ordner löschen falls vorhanden
-rm -rf /var/www/paymenter/extensions/Others/DomainProvisioner
 
-# Neuen Ordner kopieren
+# Ordner kopieren
 cp -r DomainProvisioner /var/www/paymenter/extensions/Others/
 
 # Cache leeren
