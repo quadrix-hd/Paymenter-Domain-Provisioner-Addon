@@ -23,6 +23,7 @@ return new class extends Migration
                 'pangolin_org_id'  => '',
                 'pangolin_site_id' => '',
                 'subdomain_field'  => 'subdomain',
+                'domain_suffix'    => '',
                 'target_port'      => '80',
             ];
             foreach ($defaults as $key => $value) {
@@ -41,7 +42,6 @@ return new class extends Migration
                 $table->string('order_id')->unique()->index();
                 $table->string('full_domain');
                 $table->string('server_ip');
-                $table->string('cf_record_id')->nullable();
                 $table->string('pangolin_resource_id')->nullable();
                 $table->timestamps();
             });
