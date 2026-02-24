@@ -11,7 +11,7 @@ use Paymenter\Extensions\Others\Domains2\Admin\Resources\SettingsResource;
 
 #[ExtensionMeta(
     name: 'Domain Provisioner',
-    description: 'Erstellt automatisch Cloudflare DNS-Einträge und Pangolin-Tunnel wenn ein Kunde eine VM mit Wunsch-Subdomain bestellt.',
+    description: 'Erstellt automatisch Pangolin-Einträge wenn ein Kunde eine VM mit Wunsch-Domain bestellt.',
     version: '1.0.0',
     author: 'Du',
     url: 'https://github.com',
