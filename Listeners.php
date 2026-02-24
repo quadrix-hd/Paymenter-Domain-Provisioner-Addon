@@ -1,46 +1,65 @@
 <?php
 
-namespace Paymenter\Extensions\Others\DomainProvisioner;
+namespace Paymenter\Extensions\Others\Domains2;
 
 use Illuminate\Support\Facades\Log;
-use Paymenter\Extensions\Others\DomainProvisioner\Models\DomainProvision;
-use Paymenter\Extensions\Others\DomainProvisioner\Models\DomainSetting;
-use Paymenter\Extensions\Others\DomainProvisioner\Services\CloudflareService;
-use Paymenter\Extensions\Others\DomainProvisioner\Services\PangolinService;
+use Paymenter\Extensions\Others\Domains2\Models\DomainProvision;
+use Paymenter\Extensions\Others\Domains2\Models\DomainSetting;
+use Paymenter\Extensions\Others\Domains2\Services\CloudflareService;
+use Paymenter\Extensions\Others\Domains2\Services\PangolinService;
 
 class Listeners
 {
-    public static function onOrderActivated($event): void
+    public static function onServiceCreated($event): void
     {
         try {
-            $order = $event->order ?? $event->model ?? null;
-            if (!$order) return;
-            self::provision($order);
+            $service = $event->service ?? null;
+            if (!$service) return;
+            self::provision($service);
         } catch (\Throwable $e) {
             Log::error('[DomainProvisioner] Fehler beim Provisionieren: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
         }
     }
 
-    public static function onOrderCancelled($event): void { self::deprovision($event); }
-    public static function onOrderDeleted($event): void   { self::deprovision($event); }
-
-    private static function provision($order): void
+    public static function onServiceDeleted($event): void { self::deprovision($event); }
+    public static function onServiceUpdated($event): void
     {
-        $orderId = (string) $order->id;
+        // Deprovisionieren wenn Status auf cancelled gesetzt wird
+        $service = $event->service ?? null;
+        if ($service && $service->status === 'cancelled') {
+            self::deprovision($event);
+        }
+    }
 
-        if (DomainProvision::where('order_id', $orderId)->exists()) {
-            Log::info("[DomainProvisioner] Bestellung {$orderId} bereits provisioniert.");
+    private static function provision($service): void
+    {
+        $serviceId = (string) $service->id;
+
+        if (DomainProvision::where('order_id', $serviceId)->exists()) {
+            Log::info("[DomainProvisioner] Service {$serviceId} bereits provisioniert.");
             return;
         }
 
         $subdomainField = DomainSetting::get('subdomain_field', 'subdomain');
         $serverIpField  = DomainSetting::get('server_ip_field', 'server_ip');
-        $options        = is_array($order->options) ? $order->options : json_decode($order->options ?? '{}', true);
-        $subdomain      = $options[$subdomainField] ?? $order->{$subdomainField} ?? null;
-        $serverIp       = $options[$serverIpField]  ?? $order->{$serverIpField}  ?? null;
 
-        if (!$subdomain) { Log::warning("[DomainProvisioner] Bestellung {$orderId}: kein Feld '{$subdomainField}'."); return; }
-        if (!$serverIp)  { Log::warning("[DomainProvisioner] Bestellung {$orderId}: kein Feld '{$serverIpField}'."); return; }
+        // Properties aus dem Service lesen (Custom-Felder)
+        $properties = $service->properties->pluck('value', 'key') ?? collect();
+
+        // Fallback: direkt über Relation mit custom_property name
+        if ($properties->isEmpty()) {
+            $properties = collect();
+            foreach ($service->properties as $prop) {
+                $key = $prop->parent_property->identifier ?? $prop->key ?? null;
+                if ($key) $properties[$key] = $prop->value;
+            }
+        }
+
+        $subdomain = $properties[$subdomainField] ?? null;
+        $serverIp  = $properties[$serverIpField]  ?? null;
+
+        if (!$subdomain) { Log::warning("[DomainProvisioner] Service {$serviceId}: kein Feld '{$subdomainField}'. Properties: " . $properties->toJson()); return; }
+        if (!$serverIp)  { Log::warning("[DomainProvisioner] Service {$serviceId}: kein Feld '{$serverIpField}'. Properties: " . $properties->toJson()); return; }
 
         $subdomain  = trim(strtolower(preg_replace('/[^a-z0-9\-]/', '-', $subdomain)), '-');
         $fullDomain = $subdomain . '.' . DomainSetting::get('base_domain');
@@ -64,10 +83,10 @@ class Listeners
         $pangolinId = $pangolin->createResource($fullDomain, $serverIp, $targetPort);
 
         DomainProvision::create([
-            'order_id'            => $orderId,
-            'full_domain'         => $fullDomain,
-            'server_ip'           => $serverIp,
-            'cf_record_id'        => $cfRecordId,
+            'order_id'             => $serviceId,
+            'full_domain'          => $fullDomain,
+            'server_ip'            => $serverIp,
+            'cf_record_id'         => $cfRecordId,
             'pangolin_resource_id' => $pangolinId,
         ]);
 
@@ -77,10 +96,10 @@ class Listeners
     private static function deprovision($event): void
     {
         try {
-            $order     = $event->order ?? $event->model ?? null;
-            if (!$order) return;
-            $orderId   = (string) $order->id;
-            $provision = DomainProvision::where('order_id', $orderId)->first();
+            $service   = $event->service ?? null;
+            if (!$service) return;
+            $serviceId = (string) $service->id;
+            $provision = DomainProvision::where('order_id', $serviceId)->first();
             if (!$provision) return;
 
             if ($provision->cf_record_id) {
